@@ -73,7 +73,8 @@
 	encountered \n",__FILE__, __LINE__, __FUNCTION__);exit(1);}else{;}};
 
 /* Application specific macro definations */
-#define I2C_DEVICE_ADDRESS_EEPROM		0x57
+//#define I2C_DEVICE_ADDRESS_EEPROM		0x57
+#define I2C_DEVICE_ADDRESS_EEPROM		0x6F
 #define I2C_DEVICE_BUFFER_SIZE			256
 #define I2C_WRITE_COMPLETION_RETRY		10
 #define START_ADDRESS_EEPROM 			0x00 /*read/write start address inside the EEPROM*/
@@ -88,7 +89,7 @@
 /* Application configuration/debugging */
 #define TEST_EEPROM						1
 #define FAST_TRANSFER					0
-#define WRITE_ONCE						0
+#define WRITE_ONCE						1
 #define CATCH_GLITCH					0
 
 /* Declaration of function pointers */
