@@ -87,9 +87,9 @@
 #define CHANNEL_TO_OPEN					0	/*0 for first available channel, 1 for next... */
 
 /* Application configuration/debugging */
-#define TEST_EEPROM						1
+#define TEST_EEPROM						0
 #define FAST_TRANSFER					0
-#define WRITE_ONCE						1
+#define WRITE_ONCE						0
 #define CATCH_GLITCH					0
 
 /* Declaration of function pointers */
