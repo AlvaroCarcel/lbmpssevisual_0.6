@@ -73,8 +73,7 @@
 	encountered \n",__FILE__, __LINE__, __FUNCTION__);exit(1);}else{;}};
 
 /* Application specific macro definations */
-//#define I2C_DEVICE_ADDRESS_EEPROM		0x57
-#define I2C_DEVICE_ADDRESS_EEPROM		0x6F
+#define I2C_DEVICE_ADDRESS_EEPROM		0x57
 #define I2C_DEVICE_BUFFER_SIZE			256
 #define I2C_WRITE_COMPLETION_RETRY		10
 #define START_ADDRESS_EEPROM 			0x00 /*read/write start address inside the EEPROM*/
@@ -82,8 +81,10 @@
 #define RETRY_COUNT_EEPROM				10	/* number of retries if read/write fails */
 #define EEPROM_DATA_OFFSET				5
 #define EEPROM_DATA_LEN					(END_ADDRESS_EEPROM-START_ADDRESS_EEPROM)
-#define I2C_DEVICE_ADDRESS_ADC			0x48
+#define I2C_DEVICE_ADDRESS_ADC			48
+#define DUT_ADDRESS						0xDE>>1
 #define ADC_DATA_LEN					2
+#define REG_DATA_LEN					1
 #define CHANNEL_TO_OPEN					0	/*0 for first available channel, 1 for next... */
 
 /* Application configuration/debugging */
@@ -443,8 +444,8 @@ void TestDeviceEEPROM()
 				glitch++;
 				continue;
 			}
-			//printf("write_bytes %d\n", status);
-			//Sleep(1000);
+			printf("write_bytes %d\n", status);
+			Sleep(1000);
 		}		
 #endif // WRITE_ONCE
 		
@@ -543,9 +544,9 @@ void TestDeviceADC()
 
 	// Write to config register
 	{
-		dataOUT[0] = 0x04;	// Value to write to upper byte of config reg
-		dataOUT[1] = 0x00;	// Value to write to lower byte of config reg
-		status = write_bytes(I2C_DEVICE_ADDRESS_ADC, 0x1, dataOUT, ADC_DATA_LEN);
+		dataOUT[0] = 0x00;	// Value to write to upper byte of config reg
+		dataOUT[1] = 0x05;	// Value to write to lower byte of config reg
+		status = write_bytes(I2C_DEVICE_ADDRESS_ADC, 0x00, dataOUT, ADC_DATA_LEN);
 		APP_CHECK_STATUS(status);
 		printf("write_bytes %d\n", status);
 	}		
@@ -612,6 +613,59 @@ void TestDeviceADC()
 			break;
 		}
 #endif // CATCH_GLITCH				
+	}
+}
+
+
+
+
+void MonitorLTCVol() // aquí debería pasar como parámetro Vnom
+{
+	FT_STATUS status = FT_OK;
+	uint32 glitch = 0;
+	uint32 count = 0;
+	uint8 dataOUT[REG_DATA_LEN] = { 0 };
+	uint8 operation = 0;
+	uint8 registerAddress = 0;
+
+
+	// Write to config register
+	{
+		//dataOUT[0] = 0x00;	// Value to write to upper byte of config reg
+		//dataOUT[1] = 0x05;	// Value to write to lower byte of config reg
+		operation = 0x05;
+		registerAddress = 0x00;
+		status = write_bytes(DUT_ADDRESS, registerAddress, operation, REG_DATA_LEN);
+		APP_CHECK_STATUS(status);
+		printf("write_bytes %d\n", status);
+	}
+
+
+	// Read the data multiple times
+	while (++count)
+	{
+		do
+		{
+			// dataIN = valor de lectura recibido y el registro que vamos a leer tienen solo 1 byte de tamaño
+			uint8 dataIN[REG_DATA_LEN] = { 0 };
+			// Registro de lectura
+			//aquí debería hacer un IF en función de lo que valga Vnom
+			registerAddress = 0x1E;
+			status = read_bytes(DUT_ADDRESS, 0, registerAddress, dataIN, REG_DATA_LEN);
+#ifdef _WIN32
+			SYSTEMTIME st = { 0 };
+			GetLocalTime(&st);
+			// printeamos valor de lectura
+			printf("[%02d-%02d:%02d:%02d] read %d bytes from register (read = %d ms)\n",
+				st.wDay, st.wHour, st.wMinute, st.wSecond, ADC_DATA_LEN, timeRead);
+#else // _WIN32
+				printf("read %d bytes same (glitch = %ud)\n", ADC_DATA_LEN, (unsigned int)glitch);
+#endif // _WIN32
+			break;
+			
+			
+
+		} while (1);
 	}
 }
 
@@ -683,14 +737,36 @@ int main()
 		status = p_I2C_InitChannel(ftHandle,&channelConf);
 		APP_CHECK_STATUS(status);
 
+
+			
+		/*FT_STATUS status = FT_OK;
+		uint8 testRead[EEPROM_DATA_LEN] = { 0 };
+		while (1) {
+			printf("write control register\n");
+			status = write_bytes(I2C_DEVICE_ADDRESS_EEPROM, 0x00, 5, EEPROM_DATA_LEN);
+			if (status != FT_OK)
+			{
+				printf("Glitch 0 write_bytes failed! \n");
+				continue;
+			}
+			printf("write_bytes %d\n", status);
+			printf("lectura\n");
+			read_bytes(I2C_DEVICE_ADDRESS_EEPROM, 0x1E, 1, testRead, EEPROM_DATA_LEN);
+			Sleep(1e3);
+		}*/
+
+		
+
+
 		// Initialize the timer
 		init_time();
 
 #if TEST_EEPROM
 		TestDeviceEEPROM();
-#else // TEST_EEPROM
+#else  TEST_EEPROM
 		TestDeviceADC();
-#endif // TEST_EEPROM
+		//MonitorLTCVol();
+#endif TEST_EEPROM
 
 		status = p_I2C_CloseChannel(ftHandle);
 	}
