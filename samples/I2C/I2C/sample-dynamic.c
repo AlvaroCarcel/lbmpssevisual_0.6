@@ -84,7 +84,7 @@
 #define I2C_DEVICE_ADDRESS_ADC			48
 #define DUT_ADDRESS						0xDE>>1
 #define ADC_DATA_LEN					2
-#define REG_DATA_LEN					1
+#define REG_DATA_LEN					2
 #define CHANNEL_TO_OPEN					0	/*0 for first available channel, 1 for next... */
 
 /* Application configuration/debugging */
@@ -619,6 +619,43 @@ void TestDeviceADC()
 
 
 
+int read_i2c(unsigned char deviceAddress, unsigned char reg, unsigned char numBytes, uint8 *value) {
+	DWORD sizeTransferred = 0;
+	// decimos de qué dirección vamos a leer
+	FT_STATUS status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, 1, &reg, &sizeTransferred, I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE);
+	APP_CHECK_STATUS(status);
+	if (status == FT_OK) {
+		// Leemos el valor de la dirección especificada previamente
+		status = p_I2C_DeviceRead(ftHandle, DUT_ADDRESS, numBytes, value, &sizeTransferred, I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT | I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE);
+		if (status != FT_OK)
+		{
+			printf("I2C_Device: fail to read\n");
+			return 0x1;
+		}
+		return *value;
+	}
+}
+
+
+
+static FT_STATUS write_i2c(unsigned char deviceAddress, unsigned char reg, unsigned char numBytes, uint8* value) {
+	DWORD sizeTransferred = 0;
+	// decimos en qué dirección vamos a escribir
+	FT_STATUS status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, 1, &reg, &sizeTransferred, I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_BREAK_ON_NACK);
+	APP_CHECK_STATUS(status);
+	if (status == FT_OK) {
+		// escribimos el valor en la dirección especificada previamente
+		status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, numBytes, value, &sizeTransferred, I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT);
+		if (status != FT_OK)
+		{
+			printf("I2C_Device: fail to write\n");
+			return status;
+		}
+		return status;
+	}
+}
+
+
 void MonitorLTCVol() // aquí debería pasar como parámetro Vnom
 {
 	FT_STATUS status = FT_OK;
@@ -627,43 +664,54 @@ void MonitorLTCVol() // aquí debería pasar como parámetro Vnom
 	uint8 dataOUT[REG_DATA_LEN] = { 0 };
 	uint8 operation = 0;
 	uint8 registerAddress = 0;
+	uint8 numBytes = 1;
+	uint32 options = 0;
+	uint8 ADCVinMSB = 0;
+	uint8 ADCVinLSB = 0;
 
 
 	// Write to config register
 	{
-		//dataOUT[0] = 0x00;	// Value to write to upper byte of config reg
-		//dataOUT[1] = 0x05;	// Value to write to lower byte of config reg
+		//dataOUT[0] = 0x05;	// Value to write to upper byte of config reg
+		//dataOUT[1] = 0x00;	// Value to write to lower byte of config reg
+		options = I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT;
 		operation = 0x05;
 		registerAddress = 0x00;
-		status = write_bytes(DUT_ADDRESS, registerAddress, operation, REG_DATA_LEN);
+		status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, REG_DATA_LEN, &registerAddress, &numBytes, options);
 		APP_CHECK_STATUS(status);
 		printf("write_bytes %d\n", status);
 	}
-
 
 	// Read the data multiple times
 	while (++count)
 	{
 		do
-		{
+		{	
+			options = I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT | I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE;
 			// dataIN = valor de lectura recibido y el registro que vamos a leer tienen solo 1 byte de tamaño
 			uint8 dataIN[REG_DATA_LEN] = { 0 };
 			// Registro de lectura
 			//aquí debería hacer un IF en función de lo que valga Vnom
 			registerAddress = 0x1E;
-			status = read_bytes(DUT_ADDRESS, 0, registerAddress, dataIN, REG_DATA_LEN);
+
+			status = p_I2C_DeviceRead(ftHandle, DUT_ADDRESS, REG_DATA_LEN, &registerAddress, &numBytes, options);
+			if (status == FT_OK)
+			{
+				//memcpy(data, buffer, bytesToTransfer);
+			}
+			//ADCVinMSB = registerAddress[0];
 #ifdef _WIN32
 			SYSTEMTIME st = { 0 };
 			GetLocalTime(&st);
 			// printeamos valor de lectura
-			printf("[%02d-%02d:%02d:%02d] read %d bytes from register (read = %d ms)\n",
-				st.wDay, st.wHour, st.wMinute, st.wSecond, ADC_DATA_LEN, timeRead);
+			printf("[%02d-%02d:%02d:%02d] read %d volts from register (read = %d ms)\n",
+				st.wDay, st.wHour, st.wMinute, st.wSecond, registerAddress, timeRead);
 #else // _WIN32
-				printf("read %d bytes same (glitch = %ud)\n", ADC_DATA_LEN, (unsigned int)glitch);
+			printf("read %d bytes same (glitch = %ud)\n", dataIN, (unsigned int)glitch);
 #endif // _WIN32
 			break;
-			
-			
+
+
 
 		} while (1);
 	}
@@ -737,37 +785,17 @@ int main()
 		status = p_I2C_InitChannel(ftHandle,&channelConf);
 		APP_CHECK_STATUS(status);
 
-
-			
-		/*FT_STATUS status = FT_OK;
-		uint8 testRead[EEPROM_DATA_LEN] = { 0 };
-		while (1) {
-			printf("write control register\n");
-			status = write_bytes(I2C_DEVICE_ADDRESS_EEPROM, 0x00, 5, EEPROM_DATA_LEN);
-			if (status != FT_OK)
-			{
-				printf("Glitch 0 write_bytes failed! \n");
-				continue;
-			}
-			printf("write_bytes %d\n", status);
-			printf("lectura\n");
-			read_bytes(I2C_DEVICE_ADDRESS_EEPROM, 0x1E, 1, testRead, EEPROM_DATA_LEN);
-			Sleep(1e3);
-		}*/
-
-		
-
-
 		// Initialize the timer
 		init_time();
 
-#if TEST_EEPROM
-		TestDeviceEEPROM();
-#else  TEST_EEPROM
-		TestDeviceADC();
-		//MonitorLTCVol();
-#endif TEST_EEPROM
 
+		//TestDeviceADC();
+		//MonitorLTCVol();
+		int controlValue = 5;
+		int value = 0;
+		status = write_i2c(DUT_ADDRESS, 0x00, 1, &controlValue);
+		value = read_i2c(DUT_ADDRESS, 0x1e, 2, &value);
+		printf("%d\n", value);
 		status = p_I2C_CloseChannel(ftHandle);
 	}
 
