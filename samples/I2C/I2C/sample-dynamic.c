@@ -622,17 +622,23 @@ void TestDeviceADC()
 int read_i2c(unsigned char deviceAddress, unsigned char reg, unsigned char numBytes, uint8 *value) {
 	DWORD sizeTransferred = 0;
 	// decimos de qué dirección vamos a leer
-	FT_STATUS status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, 1, &reg, &sizeTransferred, I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE);
+	FT_STATUS status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, 1, &reg, &sizeTransferred, 
+		I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE);
 	APP_CHECK_STATUS(status);
 	if (status == FT_OK) {
 		// Leemos el valor de la dirección especificada previamente
-		status = p_I2C_DeviceRead(ftHandle, DUT_ADDRESS, numBytes, value, &sizeTransferred, I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT | I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE);
+		status = p_I2C_DeviceRead(ftHandle, DUT_ADDRESS, numBytes, value, &sizeTransferred, 
+			I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT | I2C_TRANSFER_OPTIONS_BREAK_ON_NACK);
 		if (status != FT_OK)
 		{
-			printf("I2C_Device: fail to read\n");
+			printf("I2C_Device: fail to read error: 0x%x\n", status);
 			return 0x1;
 		}
 		return *value;
+	}
+	else {
+		printf("I2C_Device: fail to read operation\n");
+		return 0x1;
 	}
 }
 
@@ -653,69 +659,78 @@ static FT_STATUS write_i2c(unsigned char deviceAddress, unsigned char reg, unsig
 		}
 		return status;
 	}
-}
-
-
-void MonitorLTCVol() // aquí debería pasar como parámetro Vnom
-{
-	FT_STATUS status = FT_OK;
-	uint32 glitch = 0;
-	uint32 count = 0;
-	uint8 dataOUT[REG_DATA_LEN] = { 0 };
-	uint8 operation = 0;
-	uint8 registerAddress = 0;
-	uint8 numBytes = 1;
-	uint32 options = 0;
-	uint8 ADCVinMSB = 0;
-	uint8 ADCVinLSB = 0;
-
-
-	// Write to config register
-	{
-		//dataOUT[0] = 0x05;	// Value to write to upper byte of config reg
-		//dataOUT[1] = 0x00;	// Value to write to lower byte of config reg
-		options = I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT;
-		operation = 0x05;
-		registerAddress = 0x00;
-		status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, REG_DATA_LEN, &registerAddress, &numBytes, options);
-		APP_CHECK_STATUS(status);
-		printf("write_bytes %d\n", status);
-	}
-
-	// Read the data multiple times
-	while (++count)
-	{
-		do
-		{	
-			options = I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT | I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE;
-			// dataIN = valor de lectura recibido y el registro que vamos a leer tienen solo 1 byte de tamaño
-			uint8 dataIN[REG_DATA_LEN] = { 0 };
-			// Registro de lectura
-			//aquí debería hacer un IF en función de lo que valga Vnom
-			registerAddress = 0x1E;
-
-			status = p_I2C_DeviceRead(ftHandle, DUT_ADDRESS, REG_DATA_LEN, &registerAddress, &numBytes, options);
-			if (status == FT_OK)
-			{
-				//memcpy(data, buffer, bytesToTransfer);
-			}
-			//ADCVinMSB = registerAddress[0];
-#ifdef _WIN32
-			SYSTEMTIME st = { 0 };
-			GetLocalTime(&st);
-			// printeamos valor de lectura
-			printf("[%02d-%02d:%02d:%02d] read %d volts from register (read = %d ms)\n",
-				st.wDay, st.wHour, st.wMinute, st.wSecond, registerAddress, timeRead);
-#else // _WIN32
-			printf("read %d bytes same (glitch = %ud)\n", dataIN, (unsigned int)glitch);
-#endif // _WIN32
-			break;
-
-
-
-		} while (1);
+	else {
+		printf("I2C_Device: fail to write operation\n");
+		return 0x1;
 	}
 }
+
+
+//void MonitorLTCVol() // aquí debería pasar como parámetro Vnom
+//{
+//	FT_STATUS status = FT_OK;
+//	uint32 glitch = 0;
+//	uint32 count = 0;
+//	uint8 dataOUT[REG_DATA_LEN] = { 0 };
+//	uint8 operation = 0;
+//	uint8 registerAddress = 0;
+//	uint8 numBytes = 1;
+//	uint32 options = 0;
+//	uint8 ADCVinMSB = 0;
+//	uint8 ADCVinLSB = 0;
+//
+//
+//	// Write to config register
+//	{
+//		//dataOUT[0] = 0x05;	// Value to write to upper byte of config reg
+//		//dataOUT[1] = 0x00;	// Value to write to lower byte of config reg
+//		options = I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT;
+//		operation = 0x05;
+//		registerAddress = 0x00;
+//		status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, REG_DATA_LEN, &registerAddress, &numBytes, options);
+//		APP_CHECK_STATUS(status);
+//		printf("write_bytes %d\n", status);
+//	}
+//
+//	// Read the data multiple times
+//	while (++count)
+//	{
+//		do
+//		{	
+//			options = I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT | I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE;
+//			// dataIN = valor de lectura recibido y el registro que vamos a leer tienen solo 1 byte de tamaño
+//			uint8 dataIN[REG_DATA_LEN] = { 0 };
+//			// Registro de lectura
+//			//aquí debería hacer un IF en función de lo que valga Vnom
+//			registerAddress = 0x1E;
+//
+//			status = p_I2C_DeviceRead(ftHandle, DUT_ADDRESS, REG_DATA_LEN, &registerAddress, &numBytes, options);
+//			if (status == FT_OK)
+//			{
+//				//memcpy(data, buffer, bytesToTransfer);
+//			}
+//			//ADCVinMSB = registerAddress[0];
+//#ifdef _WIN32
+//			SYSTEMTIME st = { 0 };
+//			GetLocalTime(&st);
+//			// printeamos valor de lectura
+//			printf("[%02d-%02d:%02d:%02d] read %d volts from register (read = %d ms)\n",
+//				st.wDay, st.wHour, st.wMinute, st.wSecond, registerAddress, timeRead);
+//#else // _WIN32
+//			printf("read %d bytes same (glitch = %ud)\n", dataIN, (unsigned int)glitch);
+//#endif // _WIN32
+//			break;
+//
+//
+//
+//		} while (1);
+//	}
+//}
+
+
+
+
+
 
 /*!
  * \brief Main function / Entry point of the sample application
@@ -791,11 +806,62 @@ int main()
 
 		//TestDeviceADC();
 		//MonitorLTCVol();
-		int controlValue = 5;
+		uint8 controlValue = 5;
 		int value = 0;
+		uint8 ADCvinMSB = 0;
+		uint8 ADCvinLSB = 0;
+		uint8 curSensMSB = 0;
+		uint8 curSensLSB = 0;
+		float ADCvin = 0;
+		float ADCcur = 0;
+		float curr = 0;
+		float Vin = 0;
+		float resistor = 0.04;
+		float PWRconsumption = 0;
 		status = write_i2c(DUT_ADDRESS, 0x00, 1, &controlValue);
-		value = read_i2c(DUT_ADDRESS, 0x1e, 2, &value);
-		printf("%d\n", value);
+
+		// Principio de exportar los calculos a la GUI para que se puedan hacer desde ahí
+		//float calculateVoltage() {
+		//	// Transfer the voltage calculation logic here
+		//	return Vin; // Return the calculated voltage
+		//}
+
+		//float calculateCurrent() {
+		//	// Transfer the current calculation logic here
+		//	return curr; // Return the calculated current
+		//}
+
+		//float calculatePower() {
+		//	// Transfer the power calculation logic here
+		//	return PWRconsumption; // Return the calculated power
+		//}
+
+		while (1) {
+			// Voltaje
+			printf("lectura de voltaje\n");
+			value = read_i2c(DUT_ADDRESS, 0x1e, 2, &value);
+			ADCvinMSB = value & 0xFF;
+			ADCvinLSB = (value<<8) & 0xFF;
+			ADCvin = ((ADCvinMSB << 4)) + ((ADCvinLSB >> 4) & 15);
+			Vin = ADCvin * 25e-3;
+			printf("voltage %.2f\n", Vin);
+
+			// Corriente
+			printf("lectura de corriente\n");
+			value = read_i2c(DUT_ADDRESS, 0x14, 2, &value);
+			curSensMSB = value & 0xFF;
+			curSensLSB = (value << 8) & 0xFF;
+			ADCcur = ((ADCvinMSB << 4)) + ((ADCvinLSB >> 4) & 15);
+			curr = ADCcur * 25e-6  / resistor;
+			printf("current %.2f\n", curr);
+
+			// Potencia
+			PWRconsumption = curr * Vin;
+			printf("Power: Power consumption: %.2f\n", PWRconsumption);
+
+			Sleep(3000);
+		}
+		
 		status = p_I2C_CloseChannel(ftHandle);
 	}
 
