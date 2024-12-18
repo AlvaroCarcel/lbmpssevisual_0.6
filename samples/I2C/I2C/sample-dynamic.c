@@ -846,6 +846,7 @@ int main()
 			Vin = ADCvin * 25e-3;
 			printf("voltage %.2f\n", Vin);
 
+
 			// Corriente
 			printf("lectura de corriente\n");
 			value = read_i2c(DUT_ADDRESS, 0x14, 2, &value);
