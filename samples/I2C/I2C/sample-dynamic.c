@@ -619,50 +619,65 @@ void TestDeviceADC()
 
 
 
-int read_i2c(unsigned char deviceAddress, unsigned char reg, unsigned char numBytes, uint8 *value) {
+int read_i2c(unsigned char deviceAddress, unsigned char reg, unsigned char numBytes, uint8* value) {
+
 	DWORD sizeTransferred = 0;
-	// decimos de qué dirección vamos a leer
-	FT_STATUS status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, 1, &reg, &sizeTransferred, 
-		I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE);
-	APP_CHECK_STATUS(status);
-	if (status == FT_OK) {
-		// Leemos el valor de la dirección especificada previamente
-		status = p_I2C_DeviceRead(ftHandle, DUT_ADDRESS, numBytes, value, &sizeTransferred, 
-			I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT | I2C_TRANSFER_OPTIONS_BREAK_ON_NACK);
-		if (status != FT_OK)
+	DWORD bytesToTransfer = 0;
+	FT_STATUS status = p_I2C_DeviceWrite(ftHandle, deviceAddress, 1, &reg, &sizeTransferred,
+		I2C_TRANSFER_OPTIONS_START_BIT |
+		I2C_TRANSFER_OPTIONS_BREAK_ON_NACK);
+
+	if (status == FT_OK)
+		status = p_I2C_DeviceRead(ftHandle, deviceAddress, numBytes, value, &bytesToTransfer,
+			I2C_TRANSFER_OPTIONS_START_BIT |
+			I2C_TRANSFER_OPTIONS_STOP_BIT |
+			I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE);
+
+	if (status != FT_OK && numBytes != bytesToTransfer)
+	{
+		WARNING("i2c_read: Failed to read data via I2C");
+		if (numBytes != bytesToTransfer)
 		{
-			printf("I2C_Device: fail to read error: 0x%x\n", status);
-			return 0x1;
+			WARNING("i2c_read: Failed to read %d bytes", numBytes);
 		}
-		return *value;
+		return -1;
 	}
-	else {
-		printf("I2C_Device: fail to read operation\n");
-		return 0x1;
-	}
+
+	return 0;
 }
 
 
 
-static FT_STATUS write_i2c(unsigned char deviceAddress, unsigned char reg, unsigned char numBytes, uint8* value) {
+
+int write_i2c(unsigned char deviceAddress, unsigned char reg, unsigned char numBytes, uint8* value) {
+
 	DWORD sizeTransferred = 0;
-	// decimos en qué dirección vamos a escribir
-	FT_STATUS status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, 1, &reg, &sizeTransferred, I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_BREAK_ON_NACK);
-	APP_CHECK_STATUS(status);
-	if (status == FT_OK) {
-		// escribimos el valor en la dirección especificada previamente
-		status = p_I2C_DeviceWrite(ftHandle, DUT_ADDRESS, numBytes, value, &sizeTransferred, I2C_TRANSFER_OPTIONS_START_BIT | I2C_TRANSFER_OPTIONS_STOP_BIT);
-		if (status != FT_OK)
-		{
-			printf("I2C_Device: fail to write\n");
-			return status;
-		}
-		return status;
+	DWORD bytesToTransfer = 0;
+	UCHAR tx_buffer[I2C_DEVICE_BUFFER_SIZE] = { 0 };
+
+	if (numBytes >= I2C_DEVICE_BUFFER_SIZE)
+	{
+		printf("i2c_write: Failed to write data via I2C, the number of bytes to send must be lower than 256");
+		return -1;
 	}
-	else {
-		printf("I2C_Device: fail to write operation\n");
-		return 0x1;
+
+	tx_buffer[bytesToTransfer++] = reg;
+	memcpy(tx_buffer + bytesToTransfer, value, numBytes);
+	bytesToTransfer += numBytes;
+
+	FT_STATUS ftStatus = p_I2C_DeviceWrite(ftHandle, deviceAddress, bytesToTransfer, &tx_buffer, &sizeTransferred,
+		I2C_TRANSFER_OPTIONS_START_BIT |
+		I2C_TRANSFER_OPTIONS_BREAK_ON_NACK |
+		I2C_TRANSFER_OPTIONS_STOP_BIT);
+	if (ftStatus != FT_OK)
+	{
+		WARNING("i2c_write: Failed to write data via I2C");
+		if (bytesToTransfer != sizeTransferred)
+			WARNING("i2c_write: Failed to write %d bytes", bytesToTransfer);
+		return -1;
 	}
+	return 0;
+
 }
 
 
@@ -816,8 +831,9 @@ int main()
 		float ADCcur = 0;
 		float curr = 0;
 		float Vin = 0;
-		float resistor = 0.04;
+		float resistor = 0.02;
 		float PWRconsumption = 0;
+		float RES_ADC_VOLT = 2.5;
 		status = write_i2c(DUT_ADDRESS, 0x00, 1, &controlValue);
 
 		// Principio de exportar los calculos a la GUI para que se puedan hacer desde ahí
@@ -838,29 +854,41 @@ int main()
 
 		while (1) {
 			// Voltaje
-			printf("lectura de voltaje\n");
-			value = read_i2c(DUT_ADDRESS, 0x1e, 2, &value);
-			ADCvinMSB = value & 0xFF;
-			ADCvinLSB = (value<<8) & 0xFF;
-			ADCvin = ((ADCvinMSB << 4)) + ((ADCvinLSB >> 4) & 15);
-			Vin = ADCvin * 25e-3;
-			printf("voltage %.2f\n", Vin);
-
+			printf("Lectura de voltaje\n");
+			uint8 buffer[2];
+			if (read_i2c(DUT_ADDRESS, 0x1E, 2, &buffer) == 0)
+			{ // Asegúrate de que read_i2c devuelve 0 si tiene éxito
+				ADCvinMSB = buffer[0];
+				ADCvinLSB = buffer[1];
+				ADCvin = ((ADCvinMSB << 4)) + ((ADCvinLSB >> 4) & 0x0F);
+				Vin = ADCvin * RES_ADC_VOLT;
+				printf("Voltaje: %.2f V\n", Vin);
+			}
+			else
+			{
+				printf("Error al leer el voltaje\n");
+			}
 
 			// Corriente
-			printf("lectura de corriente\n");
-			value = read_i2c(DUT_ADDRESS, 0x14, 2, &value);
-			curSensMSB = value & 0xFF;
-			curSensLSB = (value << 8) & 0xFF;
-			ADCcur = ((ADCvinMSB << 4)) + ((ADCvinLSB >> 4) & 15);
-			curr = ADCcur * 25e-6  / resistor;
-			printf("current %.2f\n", curr);
+			printf("Lectura de corriente\n");
+			if (read_i2c(DUT_ADDRESS, 0x14, 2, &buffer) == 0)
+			{
+				curSensMSB = buffer[0];
+				curSensLSB = buffer[1];
+				ADCcur = ((curSensMSB << 4)) + ((curSensLSB >> 4) & 0x0F);
+				curr = ADCcur * 25e-6 / resistor;
+				printf("Corriente: %.2f A\n", curr);
+			}
+			else
+			{
+				printf("Error al leer la corriente\n");
+			}
 
 			// Potencia
 			PWRconsumption = curr * Vin;
-			printf("Power: Power consumption: %.2f\n", PWRconsumption);
+			printf("Consumo de potencia: %.2f W\n", PWRconsumption);
 
-			Sleep(3000);
+			Sleep(3000); // Espera de 3 segundos
 		}
 		
 		status = p_I2C_CloseChannel(ftHandle);
